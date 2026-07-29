@@ -1,0 +1,33 @@
+{
+  "name": "bp-jup-stock-monitor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Backpack Securities 与 Jupiter 可交割美股代币价差监控器",
+  "type": "module",
+  "scripts": {
+    "db:init": "tsx src/cli.ts db:init",
+    "simulate": "tsx src/cli.ts simulate",
+    "monitor": "tsx src/cli.ts monitor",
+    "report": "tsx src/cli.ts report",
+    "export": "tsx src/cli.ts export",
+    "validate:assets": "tsx src/cli.ts validate-assets",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm test"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.2.0",
+    "decimal.js": "^10.6.0",
+    "dotenv": "^17.2.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^24.1.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}
