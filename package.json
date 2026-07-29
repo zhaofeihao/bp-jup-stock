@@ -5,12 +5,21 @@
   "description": "Backpack Securities 与 Jupiter 可交割美股代币价差监控器",
   "type": "module",
   "scripts": {
+    "build": "tsc --project tsconfig.build.json",
+    "start": "node dist/cli.js monitor",
     "db:init": "tsx src/cli.ts db:init",
     "simulate": "tsx src/cli.ts simulate",
     "monitor": "tsx src/cli.ts monitor",
     "report": "tsx src/cli.ts report",
     "export": "tsx src/cli.ts export",
     "validate:assets": "tsx src/cli.ts validate-assets",
+    "pm2:start": "npm run build && pm2 start ecosystem.config.cjs",
+    "pm2:restart": "npm run build && pm2 restart ecosystem.config.cjs --update-env",
+    "pm2:stop": "pm2 stop bp-jup-stock",
+    "pm2:delete": "pm2 delete bp-jup-stock",
+    "pm2:status": "pm2 status",
+    "pm2:logs": "pm2 logs bp-jup-stock",
+    "pm2:save": "pm2 save",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "check": "npm run typecheck && npm test"
@@ -26,6 +35,7 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24.1.0",
+    "pm2": "^7.0.3",
     "tsx": "^4.20.3",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"

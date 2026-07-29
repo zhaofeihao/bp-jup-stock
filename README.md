@@ -52,7 +52,7 @@ BACKPACK_QUOTE_MODE=auto
 ```bash
 npm run validate:assets
 npm run monitor -- --once
-npm run monitor
+npm run pm2:start
 ```
 
 `QUOTE_ONLY` 模式下，程序会强制忽略 `JUPITER_TAKER`，Jupiter `/order` 不组装交易，因此钱包可以保持空白。价差达到阈值仍会提醒，但消息会标为“观察价差提醒”，人工操作前必须重新询价。
@@ -69,6 +69,35 @@ JUPITER_TAKER=你的Solana公钥
 Backpack RFQ API 密钥用于创建 `AwaitAccept` RFQ 和轮询候选报价。程序没有调用 `/rfq/accept` 的代码路径，未接受的 RFQ 会自然过期。建议仍为监控程序创建独立、最小权限的 API 密钥。
 
 在 `auto` 模式下，RFQ 失败时会尝试现货订单簿。当前动态市场信息显示只有部分标的存在股票现货订单簿；RFQ-only 标的在没有密钥时会记录明确的数据源错误，不会使用外部 ticker 或页面价代替。
+
+## PM2 进程管理
+
+项目使用本地安装的 PM2 管理实时监控进程。`ecosystem.config.cjs` 固定使用单实例 `fork` 模式，避免多个进程同时写入 SQLite。启动和重启命令会先编译 TypeScript，再运行 `dist/cli.js monitor`；应用仍从项目根目录的 `.env` 读取配置。
+
+```bash
+# 首次启动
+npm run pm2:start
+
+# 查看状态与实时日志
+npm run pm2:status
+npm run pm2:logs
+
+# 更新代码或 .env 后重新编译并重启
+npm run pm2:restart
+
+# 停止或从 PM2 中移除进程
+npm run pm2:stop
+npm run pm2:delete
+```
+
+需要机器重启后自动恢复时，先保存当前进程列表：
+
+```bash
+npm run pm2:save
+npx pm2 startup
+```
+
+`npx pm2 startup` 会输出一条与当前操作系统和用户相关的命令；按提示执行该命令即可启用开机启动。不要直接用多实例或 cluster 模式运行本项目。
 
 ## 提醒
 
