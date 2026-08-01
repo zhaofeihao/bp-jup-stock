@@ -36,10 +36,12 @@ export class OpportunityEngine {
       input.buyQuote.venue === "JUPITER" ? input.buyQuote : input.sellQuote;
     const jupiterPriceImpactBps = Math.abs(jupiterQuote.priceImpactBps);
     const executionVerified =
-      input.buyQuote.executable && input.sellQuote.executable;
+      input.stage === "RFQ_VERIFIED" &&
+      input.buyQuote.executable &&
+      input.sellQuote.executable;
 
     const rejectReasons: string[] = [];
-    if (this.alertMode === "EXECUTABLE" && !executionVerified) {
+    if (input.stage === "RFQ_VERIFIED" && !executionVerified) {
       rejectReasons.push("报价未形成可执行交易");
     }
     if (grossSpreadBps.lt(this.thresholds.minGrossSpreadBps)) {
@@ -77,10 +79,15 @@ export class OpportunityEngine {
     return {
       asset: input.asset.symbol,
       direction: input.direction,
+      stage: input.stage,
       requestedQuantity: input.requestedQuantity,
       quantity: input.quantity,
       buyVenue: input.buyQuote.venue,
       sellVenue: input.sellQuote.venue,
+      buySource: input.buyQuote.source,
+      sellSource: input.sellQuote.source,
+      buyQuoteNote: input.buyQuote.note,
+      sellQuoteNote: input.sellQuote.note,
       buyUsdc: buyUsdc.toNumber(),
       sellUsdc: sellUsdc.toNumber(),
       buyUnitPrice: input.buyQuote.unitPrice,

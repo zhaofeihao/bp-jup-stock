@@ -21,6 +21,14 @@ export class LiveMarketDataProvider implements MarketDataProvider {
     );
   }
 
+  quoteBackpackReference(
+    asset: AssetDefinition,
+    side: AssetSide,
+    quantity: number,
+  ): Promise<ExecutableQuote> {
+    return this.backpack.quoteReference(asset, side, quantity);
+  }
+
   quoteBackpack(
     asset: AssetDefinition,
     side: AssetSide,

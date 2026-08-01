@@ -98,7 +98,7 @@ async function monitorLive(
 ): Promise<void> {
   if (config.alertMode === "QUOTE_ONLY") {
     console.warn(
-      "当前为 QUOTE_ONLY 观察模式：无需链上资金；提醒仅代表价差达标，人工操作前必须重新询价。",
+      "当前为 QUOTE_ONLY 观察模式：仅使用公开行情初筛，不发 Backpack RFQ；提醒不是可执行报价。",
     );
   } else if (!config.jupiter.taker) {
     console.warn(
@@ -106,11 +106,12 @@ async function monitorLive(
     );
   }
   if (
+    config.alertMode === "EXECUTABLE" &&
     config.backpack.mode !== "depth" &&
     (!config.backpack.apiKey || !config.backpack.apiSecret)
   ) {
     console.warn(
-      "提示：未配置 Backpack RFQ 密钥，将只能使用已确认存在的现货订单簿。",
+      "提示：未配置 Backpack RFQ 密钥；参考价差仍会监控，第二阶段只能尝试足量现货订单簿。",
     );
   }
 

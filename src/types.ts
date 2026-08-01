@@ -25,6 +25,9 @@ export type AssetSide = "BUY_ASSET" | "SELL_ASSET";
 export type QuoteSource =
   | "BACKPACK_RFQ"
   | "BACKPACK_DEPTH"
+  | "BACKPACK_TOP_OF_BOOK"
+  | "BACKPACK_TICKER_VENUE"
+  | "BACKPACK_TICKER_EXTERNAL"
   | "JUPITER_SWAP_V2"
   | "MOCK";
 
@@ -41,6 +44,7 @@ export interface ExecutableQuote {
   observedAt: number;
   validUntil: number | null;
   executable: boolean;
+  note?: string;
   raw: unknown;
 }
 
@@ -48,10 +52,12 @@ export type OpportunityDirection =
   | "JUPITER_BUY_BACKPACK_SELL"
   | "BACKPACK_BUY_JUPITER_SELL";
 export type AlertMode = "EXECUTABLE" | "QUOTE_ONLY";
+export type OpportunityStage = "REFERENCE" | "RFQ_VERIFIED";
 
 export interface OpportunityInput {
   asset: AssetDefinition;
   direction: OpportunityDirection;
+  stage: OpportunityStage;
   requestedQuantity: number;
   quantity: number;
   buyQuote: ExecutableQuote;
@@ -62,10 +68,15 @@ export interface OpportunityInput {
 export interface Opportunity {
   asset: AssetSymbol;
   direction: OpportunityDirection;
+  stage: OpportunityStage;
   requestedQuantity: number;
   quantity: number;
   buyVenue: Venue;
   sellVenue: Venue;
+  buySource: QuoteSource;
+  sellSource: QuoteSource;
+  buyQuoteNote?: string;
+  sellQuoteNote?: string;
   buyUsdc: number;
   sellUsdc: number;
   buyUnitPrice: number;
@@ -105,6 +116,11 @@ export interface PaperTrade {
 
 export interface MarketDataProvider {
   beginCycle?(): void | Promise<void>;
+  quoteBackpackReference(
+    asset: AssetDefinition,
+    side: AssetSide,
+    quantity: number,
+  ): Promise<ExecutableQuote>;
   quoteBackpack(
     asset: AssetDefinition,
     side: AssetSide,

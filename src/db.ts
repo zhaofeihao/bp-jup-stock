@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS opportunities (
   run_id INTEGER NOT NULL REFERENCES scan_runs(id),
   asset TEXT NOT NULL,
   direction TEXT NOT NULL,
+  stage TEXT NOT NULL CHECK (stage IN ('REFERENCE', 'RFQ_VERIFIED')),
   requested_quantity REAL NOT NULL,
   quantity REAL NOT NULL,
   buy_quote_id INTEGER NOT NULL REFERENCES quotes(id),
@@ -129,6 +130,7 @@ CREATE INDEX IF NOT EXISTS idx_paper_trades_time
 export interface OpportunityReportRow {
   asset: string;
   direction: string;
+  stage: string;
   requested_quantity: number;
   alert_mode: string;
   samples: number;
@@ -224,19 +226,20 @@ export class Recorder {
     const result = this.sqlite
       .prepare(
         `INSERT INTO opportunities (
-          run_id, asset, direction, requested_quantity, quantity,
+          run_id, asset, direction, stage, requested_quantity, quantity,
           buy_quote_id, sell_quote_id, buy_venue, sell_venue,
           buy_usdc, sell_usdc, buy_unit_price, sell_unit_price,
           gross_profit_usdc, total_cost_usdc, net_profit_usdc,
           gross_spread_bps, net_spread_bps, max_quote_age_ms,
           jupiter_price_impact_bps, alert_mode, execution_verified,
           eligible, reject_reasons_json, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         runId,
         opportunity.asset,
         opportunity.direction,
+        opportunity.stage,
         opportunity.requestedQuantity,
         opportunity.quantity,
         buyQuoteId,
@@ -383,6 +386,7 @@ export class Recorder {
         `SELECT
           asset,
           direction,
+          stage,
           requested_quantity,
           alert_mode,
           COUNT(*) AS samples,
@@ -393,8 +397,8 @@ export class Recorder {
           ROUND(SUM(CASE WHEN eligible = 1 THEN net_profit_usdc ELSE 0 END), 4)
             AS total_expected_profit_usdc
         FROM opportunities
-        GROUP BY asset, direction, requested_quantity, alert_mode
-        ORDER BY asset, direction, requested_quantity, alert_mode`,
+        GROUP BY asset, direction, stage, requested_quantity, alert_mode
+        ORDER BY asset, direction, stage, requested_quantity, alert_mode`,
       )
       .all() as OpportunityReportRow[];
   }
@@ -421,6 +425,7 @@ export class Recorder {
           datetime(created_at / 1000, 'unixepoch', 'localtime') AS time,
           asset,
           direction,
+          stage,
           ROUND(requested_quantity, 6) AS requested_qty,
           ROUND(quantity, 6) AS matched_qty,
           ROUND(net_profit_usdc, 4) AS net_profit,
@@ -455,6 +460,11 @@ export class Recorder {
       .prepare("PRAGMA table_info(opportunities)")
       .all() as Array<{ name: string }>;
     const names = new Set(columns.map((column) => column.name));
+    if (!names.has("stage")) {
+      this.sqlite.exec(
+        "ALTER TABLE opportunities ADD COLUMN stage TEXT NOT NULL DEFAULT 'RFQ_VERIFIED'",
+      );
+    }
     if (!names.has("alert_mode")) {
       this.sqlite.exec(
         "ALTER TABLE opportunities ADD COLUMN alert_mode TEXT NOT NULL DEFAULT 'EXECUTABLE'",

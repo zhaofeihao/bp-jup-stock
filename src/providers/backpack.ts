@@ -24,6 +24,19 @@ interface DepthResponse {
   lastUpdateId: string;
 }
 
+interface TickerResponse {
+  symbol: string;
+  firstPrice: string;
+  lastPrice: string;
+  priceChange: string;
+  priceChangePercent: string;
+  high: string;
+  low: string;
+  volume: string;
+  quoteVolume: string;
+  trades: string;
+}
+
 interface RfqResponse {
   rfqId: string;
   expiryTime: number;
@@ -106,6 +119,19 @@ export function calculateVwap(
   };
 }
 
+export function sortDepthLevels(
+  levels: [string, string][],
+  side: AssetSide,
+): [string, string][] {
+  return [...levels].sort((left, right) => {
+    const leftPrice = Number(left[0]);
+    const rightPrice = Number(right[0]);
+    return side === "BUY_ASSET"
+      ? leftPrice - rightPrice
+      : rightPrice - leftPrice;
+  });
+}
+
 export class BackpackQuoteProvider {
   private readonly privateKey?: KeyObject;
 
@@ -113,6 +139,93 @@ export class BackpackQuoteProvider {
     if (config.apiSecret) {
       this.privateKey = createBackpackPrivateKey(config.apiSecret);
     }
+  }
+
+  async quoteReference(
+    asset: AssetDefinition,
+    side: AssetSide,
+    quantity: number,
+  ): Promise<ExecutableQuote> {
+    const failures: string[] = [];
+
+    if (asset.backpackSpotSymbol) {
+      try {
+        const { depth, latencyMs } = await this.fetchDepth(
+          asset.backpackSpotSymbol,
+        );
+        const levels = sortDepthLevels(
+          side === "BUY_ASSET" ? depth.asks : depth.bids,
+          side,
+        );
+        const validLevels = levels.filter(([price, available]) =>
+          new Decimal(price).gt(0) && new Decimal(available).gt(0),
+        );
+        if (validLevels.length > 0) {
+          try {
+            const quote = this.depthQuote(
+              asset,
+              side,
+              quantity,
+              depth,
+              validLevels,
+              latencyMs,
+            );
+            return {
+              ...quote,
+              executable: false,
+              note: "公开订单簿足量 VWAP；尚未验证账户与最终交易组装",
+            };
+          } catch (error) {
+            const coveredQuantity = validLevels
+              .reduce(
+                (sum, [, available]) => sum.plus(available),
+                new Decimal(0),
+              )
+              .toNumber();
+            const topPrice = Number(validLevels[0]![0]);
+            return {
+              venue: "BACKPACK",
+              source: "BACKPACK_TOP_OF_BOOK",
+              asset: asset.symbol,
+              side,
+              assetQuantity: quantity,
+              usdcAmount: topPrice * quantity,
+              unitPrice: topPrice,
+              priceImpactBps: 0,
+              latencyMs,
+              observedAt: normalizeTimestamp(depth.timestamp),
+              validUntil: null,
+              executable: false,
+              note: `盘口仅覆盖 ${formatQuantity(coveredQuantity)} / ${formatQuantity(quantity)} 股，按顶价外推，不保证整档成交`,
+              raw: {
+                depth,
+                reference: {
+                  kind: "TOP_OF_BOOK",
+                  coveredQuantity,
+                  requestedQuantity: quantity,
+                  fallbackReason: errorMessage(error),
+                },
+              },
+            };
+          }
+        }
+        failures.push("订单簿对应方向没有有效档位");
+      } catch (error) {
+        failures.push(`订单簿：${errorMessage(error)}`);
+      }
+    } else {
+      failures.push("没有现货订单簿市场");
+    }
+
+    for (const source of ["Venue", "External"] as const) {
+      try {
+        return await this.quoteTicker(asset, side, quantity, source);
+      } catch (error) {
+        failures.push(`${source} ticker：${errorMessage(error)}`);
+      }
+    }
+
+    throw new Error(`Backpack 参考行情不可用：${failures.join("；")}`);
   }
 
   async quote(
@@ -153,18 +266,29 @@ export class BackpackQuoteProvider {
         `${asset.symbol} 没有已确认的 Backpack 现货订单簿；请配置 RFQ API 密钥`,
       );
     }
-    const startedAt = Date.now();
-    const url = new URL("/api/v1/depth", BACKPACK_BASE_URL);
-    url.searchParams.set("symbol", asset.backpackSpotSymbol);
-    url.searchParams.set("limit", "1000");
-    const response = await fetch(url, { signal: AbortSignal.timeout(5_000) });
-    if (!response.ok) {
-      throw new Error(
-        `Backpack depth ${response.status}: ${await response.text()}`,
-      );
-    }
-    const depth = (await response.json()) as DepthResponse;
-    const levels = side === "BUY_ASSET" ? depth.asks : depth.bids;
+    const { depth, latencyMs } = await this.fetchDepth(asset.backpackSpotSymbol);
+    const levels = sortDepthLevels(
+      side === "BUY_ASSET" ? depth.asks : depth.bids,
+      side,
+    );
+    return this.depthQuote(
+      asset,
+      side,
+      quantity,
+      depth,
+      levels,
+      latencyMs,
+    );
+  }
+
+  private depthQuote(
+    asset: AssetDefinition,
+    side: AssetSide,
+    quantity: number,
+    depth: DepthResponse,
+    levels: [string, string][],
+    latencyMs: number,
+  ): ExecutableQuote {
     const vwap = calculateVwap(levels, quantity);
     const adverseImpact =
       side === "BUY_ASSET"
@@ -181,11 +305,81 @@ export class BackpackQuoteProvider {
       usdcAmount: vwap.totalUsdc,
       unitPrice: vwap.unitPrice,
       priceImpactBps: Math.max(0, adverseImpact),
-      latencyMs: Date.now() - startedAt,
+      latencyMs,
       observedAt,
       validUntil: null,
       executable: true,
       raw: depth,
+    };
+  }
+
+  private async fetchDepth(
+    symbol: string,
+  ): Promise<{ depth: DepthResponse; latencyMs: number }> {
+    const startedAt = Date.now();
+    const url = new URL("/api/v1/depth", BACKPACK_BASE_URL);
+    url.searchParams.set("symbol", symbol);
+    url.searchParams.set("limit", "1000");
+    const response = await fetch(url, { signal: AbortSignal.timeout(5_000) });
+    if (!response.ok) {
+      throw new Error(
+        `Backpack depth ${response.status}: ${await response.text()}`,
+      );
+    }
+    return {
+      depth: (await response.json()) as DepthResponse,
+      latencyMs: Date.now() - startedAt,
+    };
+  }
+
+  private async quoteTicker(
+    asset: AssetDefinition,
+    side: AssetSide,
+    quantity: number,
+    tickerSource: "Venue" | "External",
+  ): Promise<ExecutableQuote> {
+    const startedAt = Date.now();
+    const tickerSymbol =
+      asset.backpackSpotSymbol ?? asset.backpackRfqSymbol.replace(/_RFQ$/, "");
+    const url = new URL("/api/v1/ticker", BACKPACK_BASE_URL);
+    url.searchParams.set("symbol", tickerSymbol);
+    url.searchParams.set("interval", "1d");
+    url.searchParams.set("source", tickerSource);
+    const response = await fetch(url, { signal: AbortSignal.timeout(5_000) });
+    if (!response.ok) {
+      throw new Error(
+        `Backpack ticker ${response.status}: ${await response.text()}`,
+      );
+    }
+    if (response.status === 204) {
+      throw new Error("没有 ticker 数据");
+    }
+    const ticker = (await response.json()) as TickerResponse;
+    const unitPrice = Number(ticker.lastPrice);
+    if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
+      throw new Error(`返回无效 lastPrice：${ticker.lastPrice}`);
+    }
+    return {
+      venue: "BACKPACK",
+      source:
+        tickerSource === "Venue"
+          ? "BACKPACK_TICKER_VENUE"
+          : "BACKPACK_TICKER_EXTERNAL",
+      asset: asset.symbol,
+      side,
+      assetQuantity: quantity,
+      usdcAmount: unitPrice * quantity,
+      unitPrice,
+      priceImpactBps: 0,
+      latencyMs: Date.now() - startedAt,
+      observedAt: Date.now(),
+      validUntil: null,
+      executable: false,
+      note:
+        tickerSource === "Venue"
+          ? "Backpack 最新成交价，成交时间未知且没有整档深度保证"
+          : "外部市场参考价，不是 Backpack 可成交报价",
+      raw: { tickerSource, ticker },
     };
   }
 
@@ -342,4 +536,8 @@ function normalizeTimestamp(timestamp: number): number {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function formatQuantity(quantity: number): string {
+  return new Decimal(quantity).toDecimalPlaces(6).toFixed();
 }

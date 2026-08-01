@@ -14,7 +14,7 @@ afterEach(() => {
 });
 
 describe("Recorder migrations", () => {
-  it("为旧 opportunities 表补充提醒模式和可执行性字段", () => {
+  it("为旧 opportunities 表补充阶段、提醒模式和可执行性字段", () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "bp-jup-db-"));
     temporaryDirectories.push(directory);
     const file = path.join(directory, "old.sqlite");
@@ -37,6 +37,7 @@ describe("Recorder migrations", () => {
         .prepare("PRAGMA table_info(opportunities)")
         .all() as Array<{ name: string }>;
       const names = columns.map((column) => column.name);
+      expect(names).toContain("stage");
       expect(names).toContain("alert_mode");
       expect(names).toContain("execution_verified");
     } finally {

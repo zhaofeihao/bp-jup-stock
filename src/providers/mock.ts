@@ -77,6 +77,19 @@ export class MockMarketDataProvider implements MarketDataProvider {
     );
   }
 
+  async quoteBackpackReference(
+    asset: AssetDefinition,
+    side: AssetSide,
+    quantity: number,
+  ): Promise<ExecutableQuote> {
+    const quote = await this.quoteBackpack(asset, side, quantity);
+    return {
+      ...quote,
+      executable: false,
+      raw: { kind: "REFERENCE", quote: quote.raw },
+    };
+  }
+
   async quoteJupiterSell(
     asset: AssetDefinition,
     quantity: number,
